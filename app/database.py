@@ -6,11 +6,11 @@ from app.config import get_settings
 
 settings = get_settings()
 
-DATABASE_URL=f"postgresql+asyncpg://postgres:postgres@localhost:5432/orders_db"
+DATABASE_URL = f"postgresql+asyncpg://{settings.DB_USER}:{settings.DB_PASSWORD}@{settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}"
 
 engine = create_async_engine(
-    settings.database_url,
-    echo=settings.debug,
+    DATABASE_URL,
+    echo=settings.DEBUG,
     pool_pre_ping=True,
 )
 
