@@ -5,22 +5,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.schemas.order import (
-    AddItemToOrderRequest,
+    AddProductToOrderRequest,
     ErrorResponse,
     OrderItemResponse,
-    OrderResponse,
 )
 from app.services.order_service import OrderService
 
 router = APIRouter(prefix="/orders", tags=["orders"])
 
-
-# Type alias for dependency injection
 DbSession = Annotated[AsyncSession, Depends(get_db)]
 
 
 def get_order_service(db: DbSession) -> OrderService:
-    """Dependency to get OrderService instance."""
     return OrderService(db)
 
 
@@ -31,71 +27,27 @@ OrderServiceDep = Annotated[OrderService, Depends(get_order_service)]
     "/{order_id}/items",
     response_model=OrderItemResponse,
     status_code=status.HTTP_201_CREATED,
-    summary="Add item to order",
-    description="""
-    Add an item to an existing order.
-    
-    - If the item is already in the order, increments the quantity
-    - If the item is new to the order, creates a new line item
-    - Validates stock availability before adding
-    - Captures item price at the time of adding (price snapshot)
-    """,
+    summary="Добавить товар в заказ",
+    description=(
+        "Добавляет товар (номенклатуру) в существующий заказ.\n\n"
+        "- Если товар уже есть в заказе — увеличивает количество.\n"
+        "- Если товара нет на складе — возвращает ошибку 400.\n"
+        "- Цена фиксируется на момент добавления."
+    ),
     responses={
-        201: {"description": "Item successfully added to order"},
-        400: {"model": ErrorResponse, "description": "Not enough stock or invalid request"},
-        404: {"model": ErrorResponse, "description": "Order or item not found"},
-        422: {"description": "Validation error"},
+        201: {"description": "Товар успешно добавлен"},
+        400: {"model": ErrorResponse, "description": "Недостаточно товара на складе"},
+        404: {"model": ErrorResponse, "description": "Заказ или товар не найден"},
     },
 )
-async def add_item_to_order(
-    order_id: Annotated[int, Path(gt=0, description="The ID of the order")],
-    request: AddItemToOrderRequest,
+async def add_product_to_order(
+    order_id: Annotated[int, Path(gt=0, description="ID заказа")],
+    body: AddProductToOrderRequest,
     service: OrderServiceDep,
 ) -> OrderItemResponse:
-    """
-    Add an item to an order.
-    
-    - **order_id**: The order to add the item to
-    - **item_id**: The item/product to add
-    - **quantity**: How many units to add (must be > 0)
-    
-    Returns the created or updated order item with current item details.
-    """
-    order_item = await service.add_item_to_order(
+    order_item = await service.add_product_to_order(
         order_id=order_id,
-        item_id=request.item_id,
-        quantity=request.quantity,
+        product_id=body.product_id,
+        quantity=body.quantity,
     )
-    
     return OrderItemResponse.model_validate(order_item)
-
-
-@router.get(
-    "/{order_id}",
-    response_model=OrderResponse,
-    summary="Get order details",
-    description="Retrieve a full order with all its items.",
-    responses={
-        200: {"description": "Order found"},
-        404: {"model": ErrorResponse, "description": "Order not found"},
-    },
-)
-async def get_order(
-    order_id: Annotated[int, Path(gt=0, description="The ID of the order")],
-    service: OrderServiceDep,
-) -> OrderResponse:
-    """
-    Get order by ID with all items.
-    
-    Returns the full order including all line items and their product details.
-    """
-    from fastapi import HTTPException
-    
-    order = await service.get_order_by_id(order_id)
-    if not order:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Order with id {order_id} not found"
-        )
-    
-    return OrderResponse.model_validate(order)

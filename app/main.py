@@ -1,73 +1,64 @@
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
+from decimal import Decimal
 
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.router import api_router
-from app.config import get_settings
+from app.database import async_session_maker, engine
+from app.models import Base, Order, Product
 
-settings = get_settings()
+
+async def _seed_demo_data() -> None:
+    """Insert demo data if the products table is empty."""
+    from sqlalchemy import select, text
+
+    async with async_session_maker() as session:
+        result = await session.execute(select(Product).limit(1))
+        if result.scalar_one_or_none() is not None:
+            return  # data already exists
+
+        products = [
+            Product(id=1, name="Смартфон X", price=Decimal("999.99"), stock_quantity=50),
+            Product(id=2, name="Ноутбук Pro", price=Decimal("1499.99"), stock_quantity=20),
+            Product(id=3, name="Книга Python", price=Decimal("49.99"), stock_quantity=100),
+            Product(id=4, name="Книга SQL", price=Decimal("39.99"), stock_quantity=0),
+        ]
+        orders = [
+            Order(id=1),
+            Order(id=2),
+        ]
+        session.add_all(products + orders)
+        await session.commit()
+
+        # Reset sequences so next inserts don't collide with demo IDs
+        await session.execute(text("SELECT setval('products_id_seq', 10, true)"))
+        await session.execute(text("SELECT setval('orders_id_seq', 10, true)"))
+        await session.commit()
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
-    """Application lifespan handler for startup/shutdown events."""
-    # Startup
-    print("Starting up Order Service...")
+async def lifespan(app: FastAPI):
+    """Create tables and seed demo data on startup."""
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    await _seed_demo_data()
     yield
-    # Shutdown
-    print("Shutting down Order Service...")
 
 
 app = FastAPI(
     title="Order Service API",
-    description="""
-    REST API для управления заказами.
-    
-    ## Возможности
-    
-    * **Orders** - Управление заказами и позициями заказов
-    * Добавление товаров в заказ
-    * Получение информации о заказе
-    
-    ## Бизнес-логика
-    
-    При добавлении товара в заказ:
-    - Проверяется существование заказа
-    - Проверяется существование товара
-    - Проверяется наличие на складе
-    - Если товар уже есть в заказе — количество увеличивается
-    - Если товара нет — создаётся новая позиция
-    """,
+    description="REST API для добавления товара в заказ",
     version="1.0.0",
-    lifespan=lifespan,
     docs_url="/docs",
     redoc_url="/redoc",
+    lifespan=lifespan,
 )
 
-# CORS middleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# Include API router
 app.include_router(api_router)
-
-
-@app.get("/health", tags=["health"])
-async def health_check() -> dict[str, str]:
-    """Health check endpoint."""
-    return {"status": "healthy"}
 
 
 @app.get("/", tags=["root"])
 async def root() -> dict[str, str]:
-    """Root endpoint with API info."""
     return {
         "service": "Order Service API",
         "version": "1.0.0",

@@ -1,13 +1,3 @@
-from app.schemas.order import (
-    AddItemToOrderRequest,
-    ItemResponse,
-    OrderItemResponse,
-    OrderResponse,
-)
+from app.schemas.order import AddProductToOrderRequest, OrderItemResponse, ProductBrief
 
-__all__ = [
-    "AddItemToOrderRequest",
-    "ItemResponse",
-    "OrderItemResponse",
-    "OrderResponse",
-]
+__all__ = ["AddProductToOrderRequest", "OrderItemResponse", "ProductBrief"]
